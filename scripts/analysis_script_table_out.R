@@ -79,7 +79,7 @@ rownames(frac.rank.samples.matched) <- frac_rank_notduplicated$Gene
 # For each transcription factor variant, get the targets for the transcription factor and fit a linear model for the expression of the targets wrt increasing numbers of the minor allele
 outputs <- list()
 no.of.tests <- 0
-df.out <- data.frame(variant = character(), target = character(), p_value = as.numeric())
+df.out <- data.frame(variant = character(), tf.interest = character(), target = character(), p_value = as.numeric())
 for (i in 1:nrow(tf.dbdp.uniq.indorothea)){
 	var <- tf.dbdp.uniq.indorothea[i,22]
 	tf.interest <- tf.dbdp.uniq.indorothea[i,9]	
@@ -89,7 +89,6 @@ for (i in 1:nrow(tf.dbdp.uniq.indorothea)){
 	frac_rank_transposed <- t(frac.rank.samples.matched[intersect.tf.targets.frac.rank,])
 	variants.range.genotypes.matched.vector <- unlist(variants.range.genotypes.matched)
 	tab <- cbind.data.frame(tf.genotypes, frac_rank_transposed, stringsAsFactors = FALSE)
-	#rownames(tab) <- isect
 	tab[,2:ncol(tab)] <- sapply(tab[,2:ncol(tab)], as.numeric)
 	p.values <- c()
 	for (j in 2:ncol(tab)){
@@ -131,18 +130,4 @@ sig.results.bh.added <- sig.results.bh %>%
 			mutate(FDR.adjusted.pvalues = FDR.adjusted.pvals[FDR.adjusted.pvals <= 0.05])
 print(sig.results.bh.added, row.names = FALSE)
 write.table(sig.results.bh.added, "/data/kryan/project/gtex/outputs/trans_eqtl_results/trans_eqtl_analysis_bh05_no_covariates_08062021.txt", quote = FALSE, sep = "\t", row.names = FALSE)
-#sink("trans_eqtl_output.txt")
-#print(outputs)
-#sink()
-#dump(outputs, file = "trans_eqtl_output_dump_05.txt")
-# dput(outputs, "trans_eqtl_outputs_dput_05.txt")
-#dput(outputs, "test_remove_same_gene_qtl.txt")
-#dput(outputs, file = "/data/kryan/project/gtex/outputs/test_outputs1022.txt")
-# read in dput outputs and look for significant ones @ bonferroni threshold
-
-#for (i in 1:length(outputs)){
- #       print(names(outputs[i]))
-  #      print(outputs[[i]][which(outputs[[i]] <= bonferroni.cutoff)])
-#}
-
 
