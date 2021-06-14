@@ -1,16 +1,23 @@
 #!/usr/bin/Rscript
 
+args = commandArgs(trailingOnly = TRUE)
+if (length(args) == 0) {
+  stop("At least one argument must be supplied ('average' or 'default' )", call.=FALSE)
+} else if (args[1] != "average" && args[1] != "default") {
+  stop("Argument must either be 'average' or 'default'", call. = FALSE)
+}
+
 # Load in packages
 library(stringr)
 library(dorothea)
 library(biomaRt)
 library(vroom)
-library(dplyr)
+library(dplyr, warn.conflicts = FALSE)
 # Point to file names
 genotypes <- "/data/kryan/project/gtex/genotype_data_dbdp.vcf"
 allele.frequency.desired <- 5.0e-02
 barrera.variants <- "/data/kryan/project/gtex/analysis/dbdp_nssnp_barrera_with_GTEx_varid.txt"
-frac_rank_file <- "/data/kryan/project/gtex/analysis/frac_rank.out.all"
+expression_file <- "/data/kryan/project/gtex/analysis/frac_rank.out.all"
 psam <- "/data/kryan/project/gtex/gtex.psam"
 
 # Read in table and extract rows with allele frequency in the desired range
@@ -25,7 +32,7 @@ genotype_to_numeric <- function(par){
  par.out[which(par == "0/0")] <- 0
  par.out[which(par == "0/1")] <- 1
  par.out[which(par == "1/1")] <- 2
-return(as.numeric(par.out)) 
+ return(as.numeric(par.out)) 
 }
 
 # convert to numeric - get some warnings, seems to be 196 na genotype values
@@ -34,7 +41,6 @@ variants.range.numeric <- apply(variants.range.genotypes, 2, genotype_to_numeric
 
 variant.ids <- variants.range$V3
 print(paste("Number of variants within desired allele frequency:",nrow(variants.range)))
-# Read in Barrera table with gtex variant ids (build 38)
 
 # Read in table from Barrera paper (with GTEx ids added in manually)
 tf.dbdp <- read.table(barrera.variants)
@@ -60,21 +66,19 @@ lmp <- function (modelobject) {
 }
 
 # Read in frac_rank file - takes 10-15 minues
-#frac_rank <- read.table(frac_rank_file, header = TRUE, fill = TRUE,nrows = 55914, comment.char = "", check.names=FALSE)
-frac_rank <- vroom(frac_rank_file)
+expression_data <- vroom(expression_file)
 
 # Delete any rows with duplicated gene names - we don't know the ensembl ids here
-singletons <- names(which(table(frac_rank$Gene) == 1))
-frac_rank_notduplicated <- frac_rank[frac_rank$Gene %in% singletons, ]
+singletons <- names(which(table(expression_data$Gene) == 1))
+expression_data_notduplicated <- expression_data[expression_data$Gene %in% singletons, ]
 
 # Read in sample ids and match up with the sample ids in the fractional rank file
 psam.ids <- read.table(psam)
 colnames(variants.range.numeric) <- psam.ids$V1
-isect <- intersect(colnames(variants.range.numeric),colnames(frac_rank[2,]))
+isect <- intersect(colnames(variants.range.numeric),colnames(expression_data[2,]))
 variants.range.genotypes.matched <- variants.range.numeric[,isect]
-frac.rank.samples.matched <- frac_rank_notduplicated[,isect]
-#frac.rank.samples.matched <- as.data.frame(frac.rank.samples.matched)
-rownames(frac.rank.samples.matched) <- frac_rank_notduplicated$Gene
+expression.data.samples.matched <- expression_data_notduplicated[,isect]
+rownames(expression.data.samples.matched) <- expression_data_notduplicated$Gene
 
 # For each transcription factor variant, get the targets for the transcription factor and fit a linear model for the expression of the targets wrt increasing numbers of the minor allele
 outputs <- list()
@@ -85,49 +89,80 @@ for (i in 1:nrow(tf.dbdp.uniq.indorothea)){
 	tf.interest <- tf.dbdp.uniq.indorothea[i,9]	
 	tf.genotypes <- variants.range.genotypes.matched[which(variants.range$V3 == var),]
 	tf.targets.interest <- dorothea_hs$target[which(dorothea_hs$tf == tf.interest & dorothea_hs$target != tf.interest)]
-	intersect.tf.targets.frac.rank <- intersect(tf.targets.interest, rownames(frac.rank.samples.matched))
-	frac_rank_transposed <- t(frac.rank.samples.matched[intersect.tf.targets.frac.rank,])
+	intersect.tf.targets.expression.data <- intersect(tf.targets.interest, rownames(expression.data.samples.matched))
+	expression_data_transposed <- t(expression.data.samples.matched[intersect.tf.targets.expression.data,])
 	variants.range.genotypes.matched.vector <- unlist(variants.range.genotypes.matched)
-	tab <- cbind.data.frame(tf.genotypes, frac_rank_transposed, stringsAsFactors = FALSE)
+	tab <- cbind.data.frame(tf.genotypes, expression_data_transposed, stringsAsFactors = FALSE)
 	tab[,2:ncol(tab)] <- sapply(tab[,2:ncol(tab)], as.numeric)
 	p.values <- c()
-	for (j in 2:ncol(tab)){
- 		 linear.model <- lm(tab[,j] ~ tab$tf.genotypes)
- 		 p.values <- c(p.values, lmp(linear.model))
-	}
+	if(args[1] == "default"){
+        p.values <- c()
+        for (j in 2:ncol(tab)){
+                 linear.model <- lm(tab[,j] ~ tab$tf.genotypes)
+                 p.values <- c(p.values, lmp(linear.model))
+                }
+        results <- cbind(rep(var, length(intersect.tf.targets.expression.data)), rep(tf.interest, length(intersect.tf.targets.expression.data)),intersect.tf.targets.expression.data, p.values )
+        colnames(results) <- c("Variant GTEx ID", "TF containing variant", "Target gene", "p-value")
+        }
+        else {
+                tab_rank <- apply(tab[,2:ncol(tab)], FUN = rank, MARGIN = 2)
+                tab_rank <- cbind(tab$tf.genotypes, tab_rank)
+                tab_rank_mean <- apply(tab_rank[,2:ncol(tab_rank)], FUN = mean, MARGIN = 1)
+                tab_rank_mean_genotypes <- cbind.data.frame(tab$tf.genotypes, tab_rank_mean)
+                colnames(tab_rank_mean_genotypes)[1] <- "tf.genotypes"
+                linear.model <- lm(tab_rank_mean_genotypes$tab_rank_mean ~ tab_rank_mean_genotypes$tf.genotypes)
+                p.values <- c(p.values, lmp(linear.model))
+                results <- cbind(var, tf.interest, p.values )
+                colnames(results) <- c("Variant GTEx ID", "TF containing variant", "p-value")
+        }
+
+	#for (j in 2:ncol(tab)){
+ 	#	 linear.model <- lm(tab[,j] ~ tab$tf.genotypes)
+ 	#	 p.values <- c(p.values, lmp(linear.model))
+	#}
 	#names(p.values) <- intersect.tf.targets.frac.rank
-	results <- cbind(rep(var, length(intersect.tf.targets.frac.rank)), rep(tf.interest, length(intersect.tf.targets.frac.rank)), intersect.tf.targets.frac.rank, p.values)
+	#results <- cbind(rep(var, length(intersect.tf.targets.expression.data)), rep(tf.interest, length(intersect.tf.targets.expression.data)), intersect.tf.targets.expression.data, p.values)
 	df.out <- rbind(df.out,results)
 	#colnames(df.out) <- c("Variant GTEx ID", "Transcription factor containing variant", "Target gene", "p-value")
-	rownames(df.out) <- NULL
-	outputs[[i]] <- p.values
-	no.of.tests <- no.of.tests + length(p.values) 
+	#rownames(df.out) <- NULL
+	#outputs[[i]] <- p.values
+	#no.of.tests <- no.of.tests + length(p.values) 
 }
-names(outputs) <- tf.dbdp.uniq.indorothea$gtex_var_format_tfdbdp_b38
-print(paste("Number of tests carried out (no.of.tests):", no.of.tests))
+#names(outputs) <- tf.dbdp.uniq.indorothea$gtex_var_format_tfdbdp_b38
+print(paste("Number of tests carried out (no.of.tests):", nrow(df.out)))
 
 # Print the bonferroni threshold
-bonferroni.cutoff <- 0.05/no.of.tests
+bonferroni.cutoff <- 0.05/nrow(df.out)
 print(paste("Significance value (list method):", bonferroni.cutoff))
 
 print(paste("Number of tests carried out(df.out)", nrow(df.out)))
 print(head(df.out))
 sig.values.df.out <- 0.05/nrow(df.out)
 print(paste("Significance value (df method):", sig.values.df.out))
+colnames(df.out) <- colnames(results)
 
-
-colnames(df.out) <- c("Variant GTEx ID", "TF containing variant", "Target gene", "p-value")
-jpeg("/data/kryan/project/gtex/outputs/trans_eqtl_results/trans_eqtl_analysis_hist_pvals_nocovariates.jpeg")
-hist(as.numeric(df.out$"p-value"), xlab = "Unadjusted p-value", main = "Histogram of p-values from eQTL analysis using frac_rank data")
-dev.off()
-sig.results <- df.out[as.numeric(df.out$"p-value") <= sig.values.df.out,]
+#jpeg("/data/kryan/project/gtex/outputs/trans_eqtl_results/trans_eqtl_analysis_hist_pvals_nocovariates.jpeg")
+#hist(as.numeric(df.out$"p-value"), xlab = "Unadjusted p-value", main = "Histogram of p-values from eQTL analysis using frac_rank data")
+#dev.off()
+print("results table:")
+#print(df.out, row.names = FALSE)
+df.out$"p-value" <- as.numeric(df.out$"p-value")
+df.out.na.remove <- na.omit(df.out)
+sig.results <- df.out.na.remove[df.out.na.remove$"p-value" <= sig.values.df.out,]
+print("Sig results (bonferroni)")
 print(sig.results, row.names = FALSE)
-write.table(sig.results,"/data/kryan/project/gtex/outputs/trans_eqtl_results/trans_eqtl_analysis_bonferroni05_no_covariates_08062021.txt",quote = FALSE, sep = "\t", row.names = FALSE)
+#write.table(df.out.na.remove,"/data/kryan/project/gtex/outputs/trans_eqtl_results/frac_rank_results/frac_rank_trans_eqtl_analysis_bonf05_no_covariates_10062021_summarised_expression_allresults_AF10.txt",quote = FALSE, sep = "\t", row.names = FALSE)
 
 FDR.adjusted.pvals <- p.adjust(as.numeric(df.out$"p-value"), method = "BH") # adjusted using Benjamini and Hochberg method
-sig.results.bh <- df.out[FDR.adjusted.pvals <= 0.05,]
+FDR.adjusted.results <- cbind(df.out.na.remove, FDR.adjusted.pvals)
+print("FDR adjusted results")
+#print(FDR.adjusted.results, row.names = FALSE)
+
+sig.results.bh <- df.out.na.remove[FDR.adjusted.pvals <= 0.05,]
 sig.results.bh.added <- sig.results.bh %>%
 			mutate(FDR.adjusted.pvalues = FDR.adjusted.pvals[FDR.adjusted.pvals <= 0.05])
-print(sig.results.bh.added, row.names = FALSE)
-write.table(sig.results.bh.added, "/data/kryan/project/gtex/outputs/trans_eqtl_results/trans_eqtl_analysis_bh05_no_covariates_08062021.txt", quote = FALSE, sep = "\t", row.names = FALSE)
-
+print("FDR adjusted significicant results")
+#print(sig.results.bh.added, row.names = FALSE)
+write.table(FDR.adjusted.results, "/data/kryan/project/gtex/outputs/trans_eqtl_results/frac_rank_results/all_targets/frac_rank_trans_eqtl_analysis_no_covariates_allresults_AF05_11062021.txt", quote = FALSE, sep = "\t", row.names = FALSE)
+write.table(sig.results, "/data/kryan/project/gtex/outputs/trans_eqtl_results/frac_rank_results/all_targets/frac_rank_trans_eqtl_analysis_no_covariates_sigresults_bonf_AF05_11062021.txt", quote = FALSE, sep = "\t", row.names = FALSE)
+write.table(sig.results.bh.added, "/data/kryan/project/gtex/outputs/trans_eqtl_results/frac_rank_results/all_targets/frac_rank_trans_eqtl_analysis_no_covariates_sigresults_bh_AF05_11062021.txt", quote = FALSE, sep = "\t", row.names = FALSE)
