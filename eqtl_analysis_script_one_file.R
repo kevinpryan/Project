@@ -56,6 +56,11 @@ dorothea_file <- "/data/kryan/project/gtex/analysis/dorothea_hs_with_target_info
 
 # Read in genotype table
 genotype.data <- read.table(genotypes, stringsAsFactors=FALSE)
+print(paste("genotype data nrow before qc:", nrow(genotype.data)))
+genotype_data_fail_VQSR <- read.table("/data/kryan/project/gtex/genotype_data_dbdp_fail_qc_29072921.txt")
+genotype_data_fail_vars <- genotype_data_fail_VQSR$V3
+genotype.data <- genotype.data[which(!(genotype.data$V3 %in% genotype_data_fail_vars)),]
+print(paste("genotype data nrow after qc:", nrow(genotype.data)))
 
 # Change genotype encoding from 0/0,0/1,1/1 to 0,1,2
 genotype_to_numeric <- function(par){
