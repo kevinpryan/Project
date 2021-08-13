@@ -1,0 +1,13 @@
+Some commands which are useful for working with the GTEx data. 
+The GTEx V8 dataset is very large, >200Gb, so it can be a good idea to extract the variants of interest to you. 
+To extract the GTEx data (it comes in 3 files: gtex.pgen, gtex.psam and gtex.pvar), the following command can be run (if you have plink2 installed and the gtex files are in your current directory):
+plink2 --pfile gtex --export vcf vcf-dosage=DS --out vcfgtex
+
+This can take a while to run (approx 15 minutes in my case).
+
+Given a file containing a column of GTEx ids (chr_ref_alt_pos_b38), the rows of the GTEx lookup table containing the variants can be extracted as follows:
+grep -F -f gtex_var_id_dbdp.txt GTEx_Analysis_2017-06-05_v8_WholeGenomeSeq_838Indiv_Analysis_Freeze.lookup_table.txt > dbdp_in_gtex.txt
+
+Where gtex_var_id_dbdp.txt is the file containing your ids and dbdp_in_gtex.txt
+
+The same should work with the GTEx data so that you can extract out genotype data for a set of variants of interest. 
