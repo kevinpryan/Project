@@ -1,4 +1,9 @@
 #!/usr/bin/Rscript
+# Purpose of this script is to extract covariates of interest from the GTEx samples to add to the fractional rank data. We want to extract the first 5 genotyping PCs,
+# PCR conditions (pcr free or not), sex, sequencing platform for the GTEx samples in the frac_rank data. To do this, we start with the 
+# whole blood covariates and extract the relevant covariates. Then we loop through each GTEx tissue and extract the covariates for any sample ID in the frac_rank
+# data which has not yet been encountered. To finish we add the covariates to the expression PCs which have already been determined using PCAtools
+# 
 library(stringr)
 library(biomaRt)
 library(vroom)
